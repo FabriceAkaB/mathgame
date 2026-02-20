@@ -1,0 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;700;800&display=swap');
+
+:root {
+  --brand: #2f7dff;
+  --ink-strong: #0f3158;
+  --ink-soft: #335f8c;
+  --ink-muted: #5f7c9b;
+  font-family: 'Baloo 2', 'Trebuchet MS', sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  min-height: 100dvh;
+  background: linear-gradient(145deg, #fefaf1 0%, #e8f4ff 52%, #f6fff1 100%);
+  color: var(--ink-strong);
+}
+
+button,
+input {
+  font: inherit;
+}
