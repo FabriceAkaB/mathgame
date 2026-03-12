@@ -26,32 +26,135 @@ function randomIntFromRng(min, max, rng) {
   return Math.floor(rng() * (max - min + 1)) + min
 }
 
-export function buildSeededQuestion(tables, seed, index) {
-  const rng = mulberry32(seed + index * 3571)
-  const safeTables = Array.isArray(tables) && tables.length > 0 ? tables : [2, 3, 4, 5]
+function normalizeNumber(value, fallback, min = 0, max = 10000) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    return fallback
+  }
+  return Math.max(min, Math.min(max, Math.round(parsed)))
+}
 
-  const a = safeTables[randomIntFromRng(0, safeTables.length - 1, rng)]
-  const b = randomIntFromRng(1, 12, rng)
-  const answer = a * b
+export function normalizeModeConfig(modeConfigOrTables) {
+  if (Array.isArray(modeConfigOrTables)) {
+    return {
+      type: 'tables',
+      tables: modeConfigOrTables.length > 0 ? modeConfigOrTables : [2, 3, 4, 5],
+    }
+  }
+
+  const source = modeConfigOrTables || {}
+
+  if (source.type === 'mixed') {
+    const rawOperations = Array.isArray(source.operations) ? source.operations : ['mul', 'add']
+    const operations = rawOperations.filter((operation) => operation === 'mul' || operation === 'add')
+    const safeOperations = operations.length > 0 ? operations : ['mul']
+
+    const mulMin = normalizeNumber(source.mulMin, 6, 1, 200)
+    const mulMax = normalizeNumber(source.mulMax, 20, mulMin, 500)
+    const addMin = normalizeNumber(source.addMin, 20, 0, 5000)
+    const addMax = normalizeNumber(source.addMax, 200, addMin, 20000)
+
+    return {
+      type: 'mixed',
+      operations: safeOperations,
+      mulMin,
+      mulMax,
+      addMin,
+      addMax,
+    }
+  }
+
+  const tables = Array.isArray(source.tables) ? source.tables.filter((value) => Number.isInteger(value)) : []
+  return {
+    type: 'tables',
+    tables: tables.length > 0 ? tables : [2, 3, 4, 5],
+  }
+}
+
+function buildOptions(answer, rng) {
   const options = new Set([answer])
+  const spread = Math.max(10, Math.round(Math.abs(answer) * 0.2))
 
-  while (options.size < 4) {
-    const spread = randomIntFromRng(-15, 15, rng)
-    const candidate = answer + (spread === 0 ? 5 : spread)
-    if (candidate > 0) {
+  let guard = 0
+  while (options.size < 4 && guard < 60) {
+    guard += 1
+    let delta = randomIntFromRng(-spread, spread, rng)
+    if (delta === 0) {
+      delta = randomIntFromRng(1, 9, rng)
+    }
+
+    const candidate = answer + delta
+    if (candidate >= 0) {
       options.add(candidate)
     }
   }
 
-  const shuffledOptions = Array.from(options).sort(() => rng() - 0.5)
+  while (options.size < 4) {
+    options.add(answer + options.size)
+  }
+
+  return Array.from(options).sort(() => rng() - 0.5)
+}
+
+function buildQuestionFromModeConfig(modeConfig, rng, idPrefix) {
+  if (modeConfig.type === 'mixed') {
+    const selectedOperation = modeConfig.operations[randomIntFromRng(0, modeConfig.operations.length - 1, rng)]
+
+    if (selectedOperation === 'add') {
+      const left = randomIntFromRng(modeConfig.addMin, modeConfig.addMax, rng)
+      const right = randomIntFromRng(modeConfig.addMin, modeConfig.addMax, rng)
+      const answer = left + right
+
+      return {
+        id: `${idPrefix}-${selectedOperation}-${left}-${right}`,
+        left,
+        right,
+        operator: '+',
+        label: `${left} + ${right}`,
+        answer,
+        options: buildOptions(answer, rng),
+      }
+    }
+
+    const left = randomIntFromRng(modeConfig.mulMin, modeConfig.mulMax, rng)
+    const right = randomIntFromRng(modeConfig.mulMin, modeConfig.mulMax, rng)
+    const answer = left * right
+
+    return {
+      id: `${idPrefix}-${selectedOperation}-${left}-${right}`,
+      left,
+      right,
+      operator: 'x',
+      label: `${left} x ${right}`,
+      answer,
+      options: buildOptions(answer, rng),
+    }
+  }
+
+  const left = modeConfig.tables[randomIntFromRng(0, modeConfig.tables.length - 1, rng)]
+  const right = randomIntFromRng(1, 12, rng)
+  const answer = left * right
 
   return {
-    id: `${seed}-${index}-${a}-${b}`,
-    a,
-    b,
+    id: `${idPrefix}-mul-${left}-${right}`,
+    left,
+    right,
+    operator: 'x',
+    label: `${left} x ${right}`,
     answer,
-    options: shuffledOptions,
+    options: buildOptions(answer, rng),
   }
+}
+
+export function buildSeededQuestion(modeConfigOrTables, seed, index) {
+  const modeConfig = normalizeModeConfig(modeConfigOrTables)
+  const rng = mulberry32(seed + index * 3571)
+  return buildQuestionFromModeConfig(modeConfig, rng, `${seed}-${index}`)
+}
+
+export function buildRandomQuestion(modeConfigOrTables) {
+  const modeConfig = normalizeModeConfig(modeConfigOrTables)
+  return buildQuestionFromModeConfig(modeConfig, Math.random, `${Date.now()}-${Math.random()}`)
 }
 
 export function createSessionSeed() {
@@ -66,14 +169,20 @@ export function sortPlayersByRank(playersMap) {
   const players = Object.values(playersMap || {})
 
   return players.sort((first, second) => {
-    if (second.score !== first.score) {
-      return second.score - first.score
+    if ((second.score || 0) !== (first.score || 0)) {
+      return (second.score || 0) - (first.score || 0)
     }
 
     const firstAccuracy = first.total > 0 ? first.correct / first.total : 0
     const secondAccuracy = second.total > 0 ? second.correct / second.total : 0
     if (secondAccuracy !== firstAccuracy) {
       return secondAccuracy - firstAccuracy
+    }
+
+    const firstWins = first.questionWins || 0
+    const secondWins = second.questionWins || 0
+    if (secondWins !== firstWins) {
+      return secondWins - firstWins
     }
 
     const firstFinish = typeof first.finishedAtMs === 'number' ? first.finishedAtMs : Infinity
