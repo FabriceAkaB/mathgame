@@ -6,11 +6,22 @@ Jeu React/Vite mobile-first (iPad, smartphone, desktop) pour apprendre les table
 
 - Solo rapide avec feedback visuel fort (vert/rouge).
 - Choix du mode de reponse: QCM ou reponse ecrite.
-- Profils locaux et records sauvegardes sur l appareil.
-- Mode multijoueur vitesse en temps reel:
+- Vrai compte cloud Firebase:
+  - Email + mot de passe
+  - Google Sign-In
+  - Progression globale synchronisee sur tous les appareils
+- Site multipage:
+  - Accueil
+  - Jouer
+  - Multijoueur
+  - Profil (parcours + progression)
+- Mode multijoueur synchronise en temps reel:
   - Creation de session avec code partageable.
   - Rejoindre la meme session sur plusieurs appareils web.
-  - Lobby, depart synchronise, classement live et classement final.
+  - Meme question pour tous.
+  - Fenetre de reponse configurable.
+  - Resultat de round + cooldown configurable.
+  - Points distribues selon la vitesse des bonnes reponses.
 
 ## Prerequis
 
@@ -26,10 +37,15 @@ cp .env.example .env
 npm run dev
 ```
 
-## Configuration Firebase (obligatoire pour le multijoueur)
+## Configuration Firebase (obligatoire)
 
 1. Cree un projet Firebase.
-2. Active `Authentication` puis `Anonymous`.
+2. Active `Authentication`:
+   - `Email/Password`
+   - `Google`
+3. Dans `Authentication > Settings > Authorized domains`, ajoute:
+   - `localhost`
+   - ton domaine Vercel (ex: `mathgame-rho.vercel.app`)
 3. Active `Firestore Database` en mode natif.
 4. Recupere les cles Web SDK et renseigne `.env`.
 5. Utilise ces regles Firestore minimales pour demarrer (a durcir ensuite):
@@ -38,6 +54,9 @@ npm run dev
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    match /tablequest_profiles/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
     match /tablequest_sessions/{sessionId} {
       allow read, write: if request.auth != null;
     }
@@ -86,3 +105,4 @@ dist
 
 - Le multijoueur fonctionne sur n importe quel navigateur moderne web, donc iPad + ordinateur + mobile.
 - Le code de session est le point d entree commun pour tous les joueurs.
+- La progression globale est stockee dans `tablequest_profiles/{uid}`.
