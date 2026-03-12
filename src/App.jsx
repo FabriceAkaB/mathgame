@@ -594,9 +594,10 @@ function App() {
   const [soloStarsEarned, setSoloStarsEarned] = useState(0)
   const [soloProgressSaved, setSoloProgressSaved] = useState(false)
 
-  const [multiModeId, setMultiModeId] = useState(DEFAULT_MODE.id)
+  const [multiConfigType, setMultiConfigType] = useState('tables') // 'tables' | 'mixed'
+  const [multiCustomTables, setMultiCustomTables] = useState([2, 3, 4, 5])
   const [multiDurationType, setMultiDurationType] = useState('timed')
-  const [multiCustomDurationSeconds, setMultiCustomDurationSeconds] = useState(DEFAULT_MODE.duration)
+  const [multiCustomDurationSeconds, setMultiCustomDurationSeconds] = useState(60)
   const [multiAnswerWindowSeconds, setMultiAnswerWindowSeconds] = useState(8)
   const [multiRevealCooldownSeconds, setMultiRevealCooldownSeconds] = useState(2)
   const [multiMentalSettingsLocal, setMultiMentalSettingsLocal] = useState({
@@ -657,7 +658,15 @@ function App() {
   const multiHostSyncBusyRef = useRef(false)
 
   const devicePlayerId = useMemo(() => getDevicePlayerId(), [])
-  const selectedMultiMode = useMemo(() => getModeById(multiModeId), [multiModeId])
+  function toggleMultiTable(n) {
+    setMultiCustomTables((prev) => {
+      if (prev.includes(n)) {
+        const next = prev.filter((t) => t !== n)
+        return next.length > 0 ? next : prev // keep at least one
+      }
+      return [...prev, n].sort((a, b) => a - b)
+    })
+  }
 
   const multiPlayers = useMemo(() => multiSession?.players || {}, [multiSession?.players])
   const multiActivePlayersMap = useMemo(() => Object.fromEntries(getActivePlayerEntries(multiPlayers)), [multiPlayers])
@@ -1786,12 +1795,12 @@ function App() {
     })
   }
 
-  function buildMultiModeConfig(mode) {
-    if (mode.id === 'mental-hard') {
+  function buildMultiModeConfig() {
+    if (multiConfigType === 'mixed') {
       return buildMentalModeConfig(multiMentalSettingsLocal)
     }
-
-    return normalizeModeConfig(mode.modeConfig)
+    const tables = multiCustomTables.length > 0 ? multiCustomTables : [2, 3, 4, 5]
+    return normalizeModeConfig({ type: 'tables', tables })
   }
 
   async function createMultiplayerSession() {
@@ -1815,8 +1824,11 @@ function App() {
           continue
         }
 
-        const selectedMode = getModeById(multiModeId)
-        const modeConfig = buildMultiModeConfig(selectedMode)
+        const modeConfig = buildMultiModeConfig()
+        const modeTitle =
+          multiConfigType === 'mixed'
+            ? `Calcul mental${multiMentalSettingsLocal.includeMul && multiMentalSettingsLocal.includeAdd ? ' (x + +)' : multiMentalSettingsLocal.includeMul ? ' (x)' : ' (+)'}`
+            : `Tables x${multiCustomTables.join(',')}`
         const answerWindowMs = normalizePositiveNumber(multiAnswerWindowSeconds, 8, 2, 60) * 1000
         const revealCooldownMs = normalizePositiveNumber(multiRevealCooldownSeconds, 2, 1, 15) * 1000
 
@@ -1827,11 +1839,11 @@ function App() {
           hostPlayerId: devicePlayerId,
           hostUid: cloudProfile.uid,
           hostName: cloudProfile.displayName,
-          modeId: selectedMode.id,
-          modeTitle: selectedMode.title,
+          modeId: multiConfigType,
+          modeTitle,
           modeConfig,
           durationType: multiDurationType,
-          durationSeconds: multiDurationType === 'infinite' ? null : normalizePositiveNumber(multiCustomDurationSeconds, selectedMode.duration, 10, 3600),
+          durationSeconds: multiDurationType === 'infinite' ? null : normalizePositiveNumber(multiCustomDurationSeconds, 60, 10, 3600),
           answerWindowMs,
           revealCooldownMs,
           answerMode,
@@ -2842,109 +2854,61 @@ function App() {
                     <p className="muted">Meme question pour tous, points selon vitesse des bonnes reponses.</p>
 
                     <article className="multiplayer-panel">
-                      <div className="multiplayer-setup-grid">
-                        <label className="stack-label">
-                          Mode de course
-                          <select
-                            value={multiModeId}
-                            onChange={(event) => {
-                              setMultiModeId(event.target.value)
-                              setMultiCustomDurationSeconds(getModeById(event.target.value).duration)
-                            }}
+
+                      {/* --- Type de mode --- */}
+                      <div className="multi-section">
+                        <p className="multi-section-label">Type de jeu</p>
+                        <div className="multi-type-toggle">
+                          <button
+                            type="button"
+                            className={`multi-type-btn${multiConfigType === 'tables' ? ' active' : ''}`}
+                            onClick={() => setMultiConfigType('tables')}
                             disabled={multiBusy}
                           >
-                            {GAME_MODES.map((mode) => (
-                              <option key={mode.id} value={mode.id}>
-                                {mode.title}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-
-                        <label className="stack-label">
-                          Type de reponse
-                          <select value={answerMode} onChange={(event) => setAnswerMode(event.target.value)} disabled={multiBusy}>
-                            {ANSWER_MODES.map((option) => (
-                              <option key={option.id} value={option.id}>
-                                {option.title}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-
-                        <label className="stack-label">
-                          Duree de course
-                          <select
-                            value={multiDurationType}
-                            onChange={(event) => setMultiDurationType(event.target.value)}
+                            Tables de multiplication
+                          </button>
+                          <button
+                            type="button"
+                            className={`multi-type-btn${multiConfigType === 'mixed' ? ' active' : ''}`}
+                            onClick={() => setMultiConfigType('mixed')}
                             disabled={multiBusy}
                           >
-                            <option value="timed">Chrono normal</option>
-                            <option value="infinite">Temps infini</option>
-                          </select>
-                        </label>
-
-                        {multiDurationType === 'timed' && (
-                          <label className="stack-label">
-                            Duree (secondes)
-                            <input
-                              type="number"
-                              min="10"
-                              max="3600"
-                              step="10"
-                              value={multiCustomDurationSeconds}
-                              onChange={(event) =>
-                                setMultiCustomDurationSeconds(normalizePositiveNumber(event.target.value, selectedMultiMode.duration, 10, 3600))
-                              }
-                              disabled={multiBusy}
-                            />
-                          </label>
-                        )}
-
-                        <label className="stack-label">
-                          Temps par reponse (sec)
-                          <input
-                            type="number"
-                            min="2"
-                            max="60"
-                            value={multiAnswerWindowSeconds}
-                            onChange={(event) =>
-                              setMultiAnswerWindowSeconds(normalizePositiveNumber(event.target.value, 8, 2, 60))
-                            }
-                            disabled={multiBusy}
-                          />
-                        </label>
-
-                        <label className="stack-label">
-                          Affichage resultat (sec)
-                          <input
-                            type="number"
-                            min="1"
-                            max="15"
-                            value={multiRevealCooldownSeconds}
-                            onChange={(event) =>
-                              setMultiRevealCooldownSeconds(normalizePositiveNumber(event.target.value, 2, 1, 15))
-                            }
-                            disabled={multiBusy}
-                          />
-                        </label>
-
-                        <label className="stack-label">
-                          Code pour rejoindre
-                          <input
-                            value={joinCodeInput}
-                            onChange={(event) => setJoinCodeInput(normalizeSessionCode(event.target.value))}
-                            placeholder="Ex: 9F7QK2"
-                            maxLength={6}
-                            disabled={multiBusy}
-                          />
-                        </label>
+                            Calcul mental libre
+                          </button>
+                        </div>
                       </div>
 
-                      {multiModeId === 'mental-hard' && (
-                        <div className="multi-mental-settings">
-                          <p className="multi-mental-title">Reglages calcul mental</p>
-                          <div className="mental-grid">
+                      {/* --- Tables selector --- */}
+                      {multiConfigType === 'tables' && (
+                        <div className="multi-section">
+                          <p className="multi-section-label">Tables incluses</p>
+                          <div className="multi-table-grid">
+                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+                              <button
+                                key={n}
+                                type="button"
+                                className={`multi-table-chip${multiCustomTables.includes(n) ? ' active' : ''}`}
+                                onClick={() => toggleMultiTable(n)}
+                                disabled={multiBusy}
+                              >
+                                {n}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="multi-table-presets">
+                            <button type="button" className="btn-ghost-xs" disabled={multiBusy} onClick={() => setMultiCustomTables([2, 3, 4, 5])}>2-5</button>
+                            <button type="button" className="btn-ghost-xs" disabled={multiBusy} onClick={() => setMultiCustomTables([6, 7, 8, 9])}>6-9</button>
+                            <button type="button" className="btn-ghost-xs" disabled={multiBusy} onClick={() => setMultiCustomTables([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])}>Tout</button>
+                            <button type="button" className="btn-ghost-xs" disabled={multiBusy} onClick={() => setMultiCustomTables([9, 10, 11, 12])}>9-12</button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* --- Calcul mental libre --- */}
+                      {multiConfigType === 'mixed' && (
+                        <div className="multi-section">
+                          <p className="multi-section-label">Operations</p>
+                          <div className="multi-op-toggles">
                             <label className="toggle-line">
                               <input
                                 type="checkbox"
@@ -2963,53 +2927,148 @@ function App() {
                               />
                               Additions
                             </label>
-                            <label className="stack-label">
-                              Mul min
-                              <input
-                                type="number"
-                                min="1"
-                                max="200"
-                                value={multiMentalSettingsLocal.mulMin}
-                                onChange={(e) => updateMultiMentalSettingLocal('mulMin', Number(e.target.value))}
-                                disabled={multiBusy}
-                              />
-                            </label>
-                            <label className="stack-label">
-                              Mul max
-                              <input
-                                type="number"
-                                min={multiMentalSettingsLocal.mulMin}
-                                max="500"
-                                value={multiMentalSettingsLocal.mulMax}
-                                onChange={(e) => updateMultiMentalSettingLocal('mulMax', Number(e.target.value))}
-                                disabled={multiBusy}
-                              />
-                            </label>
-                            <label className="stack-label">
-                              Add min
-                              <input
-                                type="number"
-                                min="0"
-                                max="5000"
-                                value={multiMentalSettingsLocal.addMin}
-                                onChange={(e) => updateMultiMentalSettingLocal('addMin', Number(e.target.value))}
-                                disabled={multiBusy}
-                              />
-                            </label>
-                            <label className="stack-label">
-                              Add max
-                              <input
-                                type="number"
-                                min={multiMentalSettingsLocal.addMin}
-                                max="20000"
-                                value={multiMentalSettingsLocal.addMax}
-                                onChange={(e) => updateMultiMentalSettingLocal('addMax', Number(e.target.value))}
-                                disabled={multiBusy}
-                              />
-                            </label>
                           </div>
+                          {multiMentalSettingsLocal.includeMul && (
+                            <div className="multi-range-row">
+                              <span className="multi-range-label">Multiplication</span>
+                              <label className="stack-label-inline">
+                                de
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="200"
+                                  value={multiMentalSettingsLocal.mulMin}
+                                  onChange={(e) => updateMultiMentalSettingLocal('mulMin', Number(e.target.value))}
+                                  disabled={multiBusy}
+                                />
+                              </label>
+                              <label className="stack-label-inline">
+                                a
+                                <input
+                                  type="number"
+                                  min={multiMentalSettingsLocal.mulMin}
+                                  max="500"
+                                  value={multiMentalSettingsLocal.mulMax}
+                                  onChange={(e) => updateMultiMentalSettingLocal('mulMax', Number(e.target.value))}
+                                  disabled={multiBusy}
+                                />
+                              </label>
+                            </div>
+                          )}
+                          {multiMentalSettingsLocal.includeAdd && (
+                            <div className="multi-range-row">
+                              <span className="multi-range-label">Addition</span>
+                              <label className="stack-label-inline">
+                                de
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="5000"
+                                  value={multiMentalSettingsLocal.addMin}
+                                  onChange={(e) => updateMultiMentalSettingLocal('addMin', Number(e.target.value))}
+                                  disabled={multiBusy}
+                                />
+                              </label>
+                              <label className="stack-label-inline">
+                                a
+                                <input
+                                  type="number"
+                                  min={multiMentalSettingsLocal.addMin}
+                                  max="20000"
+                                  value={multiMentalSettingsLocal.addMax}
+                                  onChange={(e) => updateMultiMentalSettingLocal('addMax', Number(e.target.value))}
+                                  disabled={multiBusy}
+                                />
+                              </label>
+                            </div>
+                          )}
                         </div>
                       )}
+
+                      {/* --- Options de partie --- */}
+                      <div className="multi-section">
+                        <p className="multi-section-label">Options de partie</p>
+                        <div className="multiplayer-setup-grid">
+                          <label className="stack-label">
+                            Type de reponse
+                            <select value={answerMode} onChange={(event) => setAnswerMode(event.target.value)} disabled={multiBusy}>
+                              {ANSWER_MODES.map((option) => (
+                                <option key={option.id} value={option.id}>
+                                  {option.title}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label className="stack-label">
+                            Duree de course
+                            <select
+                              value={multiDurationType}
+                              onChange={(event) => setMultiDurationType(event.target.value)}
+                              disabled={multiBusy}
+                            >
+                              <option value="timed">Chrono</option>
+                              <option value="infinite">Temps infini</option>
+                            </select>
+                          </label>
+
+                          {multiDurationType === 'timed' && (
+                            <label className="stack-label">
+                              Duree (sec)
+                              <input
+                                type="number"
+                                min="10"
+                                max="3600"
+                                step="10"
+                                value={multiCustomDurationSeconds}
+                                onChange={(event) =>
+                                  setMultiCustomDurationSeconds(normalizePositiveNumber(event.target.value, 60, 10, 3600))
+                                }
+                                disabled={multiBusy}
+                              />
+                            </label>
+                          )}
+
+                          <label className="stack-label">
+                            Temps/reponse (sec)
+                            <input
+                              type="number"
+                              min="2"
+                              max="60"
+                              value={multiAnswerWindowSeconds}
+                              onChange={(event) =>
+                                setMultiAnswerWindowSeconds(normalizePositiveNumber(event.target.value, 8, 2, 60))
+                              }
+                              disabled={multiBusy}
+                            />
+                          </label>
+
+                          <label className="stack-label">
+                            Affichage resultat (sec)
+                            <input
+                              type="number"
+                              min="1"
+                              max="15"
+                              value={multiRevealCooldownSeconds}
+                              onChange={(event) =>
+                                setMultiRevealCooldownSeconds(normalizePositiveNumber(event.target.value, 2, 1, 15))
+                              }
+                              disabled={multiBusy}
+                            />
+                          </label>
+
+                          <label className="stack-label">
+                            Code pour rejoindre
+                            <input
+                              value={joinCodeInput}
+                              onChange={(event) => setJoinCodeInput(normalizeSessionCode(event.target.value))}
+                              placeholder="Ex: 9F7QK2"
+                              maxLength={6}
+                              disabled={multiBusy}
+                            />
+                          </label>
+                        </div>
+                      </div>
 
                       <div className="multiplayer-actions">
                         <button type="button" className="btn-primary" onClick={createMultiplayerSession} disabled={multiBusy}>
